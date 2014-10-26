@@ -1,5 +1,7 @@
-DKMS module based on Seth Forshee's work:
-https://bugs.launchpad.net/ubuntu/+source/xserver-xorg-video-intel/+bug/681904/comments/111
+Attempt to turn https://github.com/mgottschlag/linux 's Focaltech driver into a
+DKMS Driver for Ubuntu 14.04.
+
+Currently not working.
 
 
 Installation instructions
@@ -8,7 +10,7 @@ Installation instructions
 sudo apt-get install dkms
 
 cd /usr/src/
-sudo wget http://people.debian.org/~julien/lp681904/psmouse-focaltech-1.tar.bz2
+sudo git clone https://github.com/markmandel/psmouse-focaltech-dkms.git
 sudo dkms add -m psmouse -v focaltech-dkms
 sudo dkms build -m psmouse -v focaltech-dkms
 sudo dkms install -m psmouse -v focaltech-dkms
