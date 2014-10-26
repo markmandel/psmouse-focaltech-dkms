@@ -7,12 +7,12 @@ Installation instructions
 
 sudo apt-get install dkms
 
-If you had install the module based on the patch of comment #64 of the original LP bug:
-sudo dkms remove psmouse/elantech-v6 --all
-
 cd /usr/src/
-sudo wget http://people.debian.org/~julien/lp681904/psmouse-elantech-lp681904-1.tar.bz2
-sudo tar jxvf psmouse-elantech-lp681904-1.tar.bz2
-sudo dkms add -m psmouse -v elantech-lp681904-1
-sudo dkms build -m psmouse -v elantech-lp681904-1
-sudo dkms install -m psmouse -v elantech-lp681904-1
+sudo wget http://people.debian.org/~julien/lp681904/psmouse-focaltech-1.tar.bz2
+sudo dkms add -m psmouse -v focaltech-dkms
+sudo dkms build -m psmouse -v focaltech-dkms
+sudo dkms install -m psmouse -v focaltech-dkms
+
+Uninstallation
+=================================
+sudo dkms remove psmouse/focaltech-dkms --all
