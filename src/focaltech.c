@@ -36,82 +36,9 @@ static const char * const focaltech_pnp_ids[] = {
  * them in order to avoid further detection attempts confusing the touchpad.
  * This way it at least works in PS/2 mouse compatibility mode.
  */
-
-int focaltech_detect_fallback(struct psmouse *psmouse, bool set_properties)
-{
-	if (!psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids))
-		return -ENODEV;
-
-	if (set_properties) {
-		psmouse->vendor = "FocalTech";
-		psmouse->name = "FocalTech Touchpad in mouse emulation mode";
-	}
-
-	return 0;
-}
-
-int focaltech_init_fallback(struct psmouse *psmouse)
-{
-	ps2_command(&psmouse->ps2dev, NULL, PSMOUSE_CMD_RESET_DIS);
-	psmouse_reset(psmouse);
-
-	return 0;
-}
-
-#ifdef CONFIG_MOUSE_PS2_FOCALTECH
-
-static int focaltech_read_register(struct ps2dev *ps2dev, int reg,
-		unsigned char *param)
-{
-	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETSCALE11))
-		return -1;
-	param[0] = 0;
-	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
-	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
-	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
-	param[0] = reg;
-	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
-	if (ps2_command(ps2dev, param, PSMOUSE_CMD_GETINFO))
-		return -1;
-	return 0;
-}
-
 int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 {
-	struct ps2dev *ps2dev = &psmouse->ps2dev;
-	unsigned char param[3];
-
 	if (!psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids))
-		return -ENODEV;
-
-	/*
-	 * We don't know how to identify the device, so we just check the
-	 * content of all registers.
-	 */
-	if (focaltech_read_register(ps2dev, 0, param))
-		return -EIO;
-	if (param[0] != 0x69 || param[1] != 0x80 || param[2] != 0x80)
-		return -ENODEV;
-	if (focaltech_read_register(ps2dev, 1, param))
-		return -EIO;
-	if (param[0] != 0x36 || param[1] != 0x53 || param[2] != 0x03)
-		return -ENODEV;
-	if (focaltech_read_register(ps2dev, 2, param))
-		return -EIO;
-	/* 0x13 and 0x0d might be the touchpad size? */
-	if (param[0] != 0x00 || param[1] != 0x13 || param[2] != 0x0d)
-		return -ENODEV;
-	if (focaltech_read_register(ps2dev, 5, param))
-		return -EIO;
-	if (param[0] != 0x0b || param[1] != 0x03 || param[2] != 0x00)
-		return -ENODEV;
-	if (focaltech_read_register(ps2dev, 6, param))
-		return -EIO;
-	if (param[0] != 0x23 || param[1] != 0xbd || param[2] != 0xf8)
 		return -ENODEV;
 
 	if (set_properties) {
@@ -121,6 +48,14 @@ int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 
 	return 0;
 }
+
+static void focaltech_reset(struct psmouse *psmouse)
+{
+	ps2_command(&psmouse->ps2dev, NULL, PSMOUSE_CMD_RESET_DIS);
+	psmouse_reset(psmouse);
+}
+
+#ifdef CONFIG_MOUSE_PS2_FOCALTECH
 
 static void focaltech_report_state(struct psmouse *psmouse)
 {
@@ -142,8 +77,7 @@ static void focaltech_report_state(struct psmouse *psmouse)
 					focaltech_invert_y(finger->y));
 		}
 	}
-	input_mt_report_pointer_emulation(dev, false);
-	input_mt_report_finger_count(dev, finger_count);
+	input_mt_report_pointer_emulation(dev, finger_count);
 
 	input_report_key(psmouse->dev, BTN_LEFT, state->pressed);
 	input_sync(psmouse->dev);
@@ -180,8 +114,10 @@ static void process_abs_packet(struct focaltech_hw_state *state,
 	 * nibble. 0xff is a special value (latching) that signals a large
 	 * contact area.
 	 */
-	if (packet[5] == 0xff)
+	if (packet[5] == 0xff) {
+		state->fingers[finger].valid = 0;
 		return;
+	}
 	state->fingers[finger].x = ((packet[1] & 0xf) << 8) | packet[2];
 	state->fingers[finger].y = (packet[3] << 8) | packet[4];
 	state->fingers[finger].valid = 1;
@@ -245,13 +181,6 @@ static psmouse_ret_t focaltech_process_byte(struct psmouse *psmouse)
 	return PSMOUSE_GOOD_DATA;
 }
 
-static void focaltech_reset(struct psmouse *psmouse)
-{
-	psmouse_info(psmouse, "focaltech_reset");
-	ps2_command(&psmouse->ps2dev, NULL, PSMOUSE_CMD_RESET_DIS);
-	psmouse_reset(psmouse);
-}
-
 static int focaltech_switch_protocol(struct psmouse *psmouse)
 {
 	struct ps2dev *ps2dev = &psmouse->ps2dev;
@@ -297,44 +226,78 @@ static int focaltech_reconnect(struct psmouse *psmouse)
 static void set_input_params(struct psmouse *psmouse)
 {
 	struct input_dev *dev = psmouse->dev;
+	struct focaltech_data *priv = psmouse->private;
 
-	__set_bit(EV_KEY, dev->evbit);
 	__set_bit(EV_ABS, dev->evbit);
-	input_set_abs_params(dev, ABS_X, 0, FOC_MAX_X, 0, 0);
-	input_set_abs_params(dev, ABS_Y, 0, FOC_MAX_Y, 0, 0);
+	input_set_abs_params(dev, ABS_MT_POSITION_X, 0, priv->x_max, 0, 0);
+	input_set_abs_params(dev, ABS_MT_POSITION_Y, 0, priv->y_max, 0, 0);
 	input_mt_init_slots(dev, 5, INPUT_MT_POINTER);
-	input_set_abs_params(dev, ABS_MT_POSITION_X, 0, FOC_MAX_X, 0, 0);
-	input_set_abs_params(dev, ABS_MT_POSITION_Y, 0, FOC_MAX_Y, 0, 0);
-	__set_bit(BTN_TOUCH, dev->keybit);
-	__set_bit(BTN_TOOL_FINGER, dev->keybit);
-	__set_bit(BTN_TOOL_DOUBLETAP, dev->keybit);
-	__set_bit(BTN_TOOL_TRIPLETAP, dev->keybit);
-	__set_bit(BTN_TOOL_QUADTAP, dev->keybit);
-	__set_bit(BTN_TOOL_QUINTTAP, dev->keybit);
 	__clear_bit(EV_REL, dev->evbit);
 	__clear_bit(REL_X, dev->relbit);
 	__clear_bit(REL_Y, dev->relbit);
-	__set_bit(BTN_LEFT, dev->keybit);
 	__clear_bit(BTN_RIGHT, dev->keybit);
 	__clear_bit(BTN_MIDDLE, dev->keybit);
 	__set_bit(INPUT_PROP_BUTTONPAD, dev->propbit);
 }
 
+static int focaltech_read_register(struct ps2dev *ps2dev, int reg,
+		unsigned char *param)
+{
+	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETSCALE11))
+		return -1;
+	param[0] = 0;
+	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
+		return -1;
+	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
+		return -1;
+	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
+		return -1;
+	param[0] = reg;
+	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
+		return -1;
+	if (ps2_command(ps2dev, param, PSMOUSE_CMD_GETINFO))
+		return -1;
+	return 0;
+}
+
+static int focaltech_read_size(struct psmouse *psmouse)
+{
+	struct ps2dev *ps2dev = &psmouse->ps2dev;
+	struct focaltech_data *priv = psmouse->private;
+	char param[3];
+
+	if (focaltech_read_register(ps2dev, 2, param))
+		return -EIO;
+	/* not sure whether this is 100% correct */
+	priv->x_max = (unsigned char)param[1] * 128;
+	priv->y_max = (unsigned char)param[2] * 128;
+
+	return 0;
+}
 int focaltech_init(struct psmouse *psmouse)
 {
 	struct focaltech_data *priv;
-
-	focaltech_reset(psmouse);
-	if (focaltech_switch_protocol(psmouse)) {
-		focaltech_reset(psmouse);
-		psmouse_info(psmouse,
-			     "Unable to initialize the device.");
-		return -ENOSYS;
-	}
+	int err;
 
 	psmouse->private = priv = kzalloc(sizeof(struct focaltech_data), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
+
+	focaltech_reset(psmouse);
+	if (focaltech_read_size(psmouse)) {
+		focaltech_reset(psmouse);
+		psmouse_err(psmouse,
+			    "Unable to read the size of the touchpad.");
+		err = -ENOSYS;
+		goto fail;
+	}
+	if (focaltech_switch_protocol(psmouse)) {
+		focaltech_reset(psmouse);
+		psmouse_err(psmouse,
+			    "Unable to initialize the device.");
+		err = -ENOSYS;
+		goto fail;
+	}
 
 	set_input_params(psmouse);
 
@@ -347,18 +310,29 @@ int focaltech_init(struct psmouse *psmouse)
 	psmouse->resync_time = 0;
 
 	return 0;
+fail:
+	focaltech_reset(psmouse);
+	kfree(priv);
+	return err;
+}
+
+bool focaltech_supported(void)
+{
+	return true;
 }
 
 #else /* CONFIG_MOUSE_PS2_FOCALTECH */
 
-int focaltech_detect(struct psmouse *psmouse, bool set_properties)
-{
-	return -ENOSYS;
-}
-
 int focaltech_init(struct psmouse *psmouse)
 {
-	return -ENOSYS;
+	focaltech_reset(psmouse);
+
+	return 0;
+}
+
+bool focaltech_supported(void)
+{
+	return false;
 }
 
 #endif /* CONFIG_MOUSE_PS2_FOCALTECH */

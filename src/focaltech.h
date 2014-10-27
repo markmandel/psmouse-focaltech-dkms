@@ -71,13 +71,12 @@ struct focaltech_hw_state {
 };
 
 struct focaltech_data {
+	unsigned int x_max, y_max;
 	struct focaltech_hw_state state;
 };
 
 int focaltech_detect(struct psmouse *psmouse, bool set_properties);
 int focaltech_init(struct psmouse *psmouse);
-
-int focaltech_detect_fallback(struct psmouse *psmouse, bool set_properties);
-int focaltech_init_fallback(struct psmouse *psmouse);
+bool focaltech_supported(void);
 
 #endif

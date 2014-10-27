@@ -18,3 +18,4 @@ sudo dkms install -m psmouse -v focaltech-dkms
 Uninstallation
 =================================
 sudo dkms remove psmouse/focaltech-dkms --all
+
