@@ -9,13 +9,12 @@ Installation instructions
 
 sudo apt-get install dkms
 
-cd /usr/src/
+cd /tmp
 sudo git clone https://github.com/markmandel/psmouse-focaltech-dkms.git
-sudo dkms add -m psmouse -v focaltech-dkms
-sudo dkms build -m psmouse -v focaltech-dkms
-sudo dkms install -m psmouse -v focaltech-dkms
+cd psmouse-focaltech-dkms
+install.sh
 
 Uninstallation
 =================================
-sudo dkms remove psmouse/focaltech-dkms --all
+sudo dkms remove focaltech/0.1 --all
 

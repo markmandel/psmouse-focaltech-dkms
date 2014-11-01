@@ -38,6 +38,7 @@ static const char * const focaltech_pnp_ids[] = {
  */
 int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 {
+	psmouse_info(psmouse, "focaltech_detect:1");
 	if (!psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids))
 		return -ENODEV;
 
@@ -51,6 +52,7 @@ int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 
 static void focaltech_reset(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "focaltech_reset:1");
 	ps2_command(&psmouse->ps2dev, NULL, PSMOUSE_CMD_RESET_DIS);
 	psmouse_reset(psmouse);
 }
@@ -59,6 +61,7 @@ static void focaltech_reset(struct psmouse *psmouse)
 
 static void focaltech_report_state(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "focaltech_report_state:1");
 	int i;
 	struct focaltech_data *priv = psmouse->private;
 	struct focaltech_hw_state *state = &priv->state;
@@ -86,6 +89,7 @@ static void focaltech_report_state(struct psmouse *psmouse)
 static void process_touch_packet(struct focaltech_hw_state *state,
 		unsigned char *packet)
 {
+	psmouse_info(psmouse, "focal: process_touch_packet:1");
 	int i;
 	unsigned char fingers = packet[1];
 
@@ -104,6 +108,7 @@ static void process_touch_packet(struct focaltech_hw_state *state,
 static void process_abs_packet(struct focaltech_hw_state *state,
 		unsigned char *packet)
 {
+	psmouse_info(psmouse, "focal: process_abs_packet:1");
 	unsigned int finger = (packet[1] >> 4) - 1;
 
 	state->pressed = (packet[0] >> 4) & 1;
@@ -122,6 +127,7 @@ static void process_abs_packet(struct focaltech_hw_state *state,
 	state->fingers[finger].y = (packet[3] << 8) | packet[4];
 	state->fingers[finger].valid = 1;
 }
+
 static void process_rel_packet(struct focaltech_hw_state *state,
 		unsigned char *packet)
 {
@@ -207,6 +213,7 @@ static int focaltech_switch_protocol(struct psmouse *psmouse)
 
 static void focaltech_disconnect(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "focaltech_disconnect:1");
 	focaltech_reset(psmouse);
 	kfree(psmouse->private);
 	psmouse->private = NULL;
@@ -214,6 +221,7 @@ static void focaltech_disconnect(struct psmouse *psmouse)
 
 static int focaltech_reconnect(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "focaltech_reconnect:1");
 	focaltech_reset(psmouse);
 	if (focaltech_switch_protocol(psmouse)) {
 		psmouse_err(psmouse,
@@ -225,6 +233,7 @@ static int focaltech_reconnect(struct psmouse *psmouse)
 
 static void set_input_params(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "set_input_params:1");
 	struct input_dev *dev = psmouse->dev;
 	struct focaltech_data *priv = psmouse->private;
 
@@ -274,8 +283,10 @@ static int focaltech_read_size(struct psmouse *psmouse)
 
 	return 0;
 }
+
 int focaltech_init(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "focaltech_init:1");
 	struct focaltech_data *priv;
 	int err;
 
@@ -318,6 +329,7 @@ fail:
 
 bool focaltech_supported(void)
 {
+	printk("focaltech_supported:true");
 	return true;
 }
 
@@ -325,6 +337,7 @@ bool focaltech_supported(void)
 
 int focaltech_init(struct psmouse *psmouse)
 {
+	psmouse_info(psmouse, "focaltech_init:false");
 	focaltech_reset(psmouse);
 
 	return 0;
@@ -332,6 +345,7 @@ int focaltech_init(struct psmouse *psmouse)
 
 bool focaltech_supported(void)
 {
+	printk("focaltech_supported:false");
 	return false;
 }
 
