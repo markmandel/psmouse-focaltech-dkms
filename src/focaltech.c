@@ -38,7 +38,6 @@ static const char * const focaltech_pnp_ids[] = {
  */
 int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 {
-	psmouse_info(psmouse, "focaltech_detect:1");
 	if (!psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids))
 		return -ENODEV;
 
@@ -52,7 +51,6 @@ int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 
 static void focaltech_reset(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "focaltech_reset:1");
 	ps2_command(&psmouse->ps2dev, NULL, PSMOUSE_CMD_RESET_DIS);
 	psmouse_reset(psmouse);
 }
@@ -61,26 +59,23 @@ static void focaltech_reset(struct psmouse *psmouse)
 
 static void focaltech_report_state(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "focaltech_report_state:1");
 	int i;
 	struct focaltech_data *priv = psmouse->private;
 	struct focaltech_hw_state *state = &priv->state;
 	struct input_dev *dev = psmouse->dev;
-	int finger_count = 0;
 
 	for (i = 0; i < FOC_MAX_FINGERS; i++) {
 		struct focaltech_finger_state *finger = &state->fingers[i];
-		int active = finger->active && finger->valid;
+		bool active = finger->active && finger->valid;
 		input_mt_slot(dev, i);
 		input_mt_report_slot_state(dev, MT_TOOL_FINGER, active);
 		if (active) {
-			finger_count++;
 			input_report_abs(dev, ABS_MT_POSITION_X, finger->x);
 			input_report_abs(dev, ABS_MT_POSITION_Y,
 					focaltech_invert_y(finger->y));
 		}
 	}
-	input_mt_report_pointer_emulation(dev, finger_count);
+	input_mt_report_pointer_emulation(dev, true);
 
 	input_report_key(psmouse->dev, BTN_LEFT, state->pressed);
 	input_sync(psmouse->dev);
@@ -89,63 +84,75 @@ static void focaltech_report_state(struct psmouse *psmouse)
 static void process_touch_packet(struct focaltech_hw_state *state,
 		unsigned char *packet)
 {
-	psmouse_info(psmouse, "focal: process_touch_packet:1");
 	int i;
 	unsigned char fingers = packet[1];
 
 	state->pressed = (packet[0] >> 4) & 1;
 	/* the second byte contains a bitmap of all fingers touching the pad */
 	for (i = 0; i < FOC_MAX_FINGERS; i++) {
-		if ((fingers & 0x1) && !state->fingers[i].active) {
-			/* we do not have a valid position for the finger yet */
-			state->fingers[i].valid = 0;
-		}
 		state->fingers[i].active = fingers & 0x1;
+		if (!state->fingers[i].active) {
+			/* even when the finger becomes active again, we still
+			 * will have to wait for the first valid position */
+			state->fingers[i].valid = false;
+		}
 		fingers >>= 1;
 	}
 }
 
-static void process_abs_packet(struct focaltech_hw_state *state,
+static void process_abs_packet(struct psmouse *psmouse,
 		unsigned char *packet)
 {
-	psmouse_info(psmouse, "focal: process_abs_packet:1");
-	unsigned int finger = (packet[1] >> 4) - 1;
+	struct focaltech_data *priv = psmouse->private;
+	struct focaltech_hw_state *state = &priv->state;
+	unsigned int finger;
+
+	finger = (packet[1] >> 4) - 1;
+	if (finger >= FOC_MAX_FINGERS) {
+		psmouse_err(psmouse, "Invalid finger in abs packet: %d",
+				finger);
+		return;
+	}
 
 	state->pressed = (packet[0] >> 4) & 1;
-	if (finger >= FOC_MAX_FINGERS)
-		return;
 	/*
 	 * packet[5] contains some kind of tool size in the most significant
 	 * nibble. 0xff is a special value (latching) that signals a large
 	 * contact area.
 	 */
 	if (packet[5] == 0xff) {
-		state->fingers[finger].valid = 0;
+		state->fingers[finger].valid = false;
 		return;
 	}
 	state->fingers[finger].x = ((packet[1] & 0xf) << 8) | packet[2];
 	state->fingers[finger].y = (packet[3] << 8) | packet[4];
-	state->fingers[finger].valid = 1;
+	state->fingers[finger].valid = true;
 }
 
-static void process_rel_packet(struct focaltech_hw_state *state,
+static void process_rel_packet(struct psmouse *psmouse,
 		unsigned char *packet)
 {
-	int finger1 = ((packet[0] >> 4) & 0x7) - 1;
-	int finger2 = ((packet[3] >> 4) & 0x7) - 1;
+	struct focaltech_data *priv = psmouse->private;
+	struct focaltech_hw_state *state = &priv->state;
+	int finger1, finger2;
 
 	state->pressed = packet[0] >> 7;
+	finger1 = ((packet[0] >> 4) & 0x7) - 1;
 	if (finger1 < FOC_MAX_FINGERS) {
 		state->fingers[finger1].x += (char)packet[1];
 		state->fingers[finger1].y += (char)packet[2];
+	} else {
+		psmouse_err(psmouse, "First finger in rel packet invalid: %d",
+				finger1);
 	}
 	/*
 	 * If there is an odd number of fingers, the last relative packet only
 	 * contains one finger. In this case, the second finger index in the
 	 * packet is 0 (we subtract 1 in the lines above to create array
-	 * indices).
+	 * indices, so the finger will overflow and be above FOC_MAX_FINGERS).
 	 */
-	if (finger2 != -1 && finger2 < FOC_MAX_FINGERS) {
+	finger2 = ((packet[3] >> 4) & 0x7) - 1;
+	if (finger2 < FOC_MAX_FINGERS) {
 		state->fingers[finger2].x += (char)packet[4];
 		state->fingers[finger2].y += (char)packet[5];
 	}
@@ -161,10 +168,10 @@ static void focaltech_process_packet(struct psmouse *psmouse)
 		process_touch_packet(&priv->state, packet);
 		break;
 	case FOC_ABS:
-		process_abs_packet(&priv->state, packet);
+		process_abs_packet(psmouse, packet);
 		break;
 	case FOC_REL:
-		process_rel_packet(&priv->state, packet);
+		process_rel_packet(psmouse, packet);
 		break;
 	default:
 		psmouse_err(psmouse, "Unknown packet type: %02x", packet[0]);
@@ -213,7 +220,6 @@ static int focaltech_switch_protocol(struct psmouse *psmouse)
 
 static void focaltech_disconnect(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "focaltech_disconnect:1");
 	focaltech_reset(psmouse);
 	kfree(psmouse->private);
 	psmouse->private = NULL;
@@ -221,7 +227,6 @@ static void focaltech_disconnect(struct psmouse *psmouse)
 
 static int focaltech_reconnect(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "focaltech_reconnect:1");
 	focaltech_reset(psmouse);
 	if (focaltech_switch_protocol(psmouse)) {
 		psmouse_err(psmouse,
@@ -233,7 +238,6 @@ static int focaltech_reconnect(struct psmouse *psmouse)
 
 static void set_input_params(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "set_input_params:1");
 	struct input_dev *dev = psmouse->dev;
 	struct focaltech_data *priv = psmouse->private;
 
@@ -253,19 +257,19 @@ static int focaltech_read_register(struct ps2dev *ps2dev, int reg,
 		unsigned char *param)
 {
 	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETSCALE11))
-		return -1;
+		return -EIO;
 	param[0] = 0;
 	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
+		return -EIO;
 	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
+		return -EIO;
 	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
+		return -EIO;
 	param[0] = reg;
 	if (ps2_command(ps2dev, param, PSMOUSE_CMD_SETRES))
-		return -1;
+		return -EIO;
 	if (ps2_command(ps2dev, param, PSMOUSE_CMD_GETINFO))
-		return -1;
+		return -EIO;
 	return 0;
 }
 
@@ -283,10 +287,8 @@ static int focaltech_read_size(struct psmouse *psmouse)
 
 	return 0;
 }
-
 int focaltech_init(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "focaltech_init:1");
 	struct focaltech_data *priv;
 	int err;
 
@@ -295,11 +297,11 @@ int focaltech_init(struct psmouse *psmouse)
 		return -ENOMEM;
 
 	focaltech_reset(psmouse);
-	if (focaltech_read_size(psmouse)) {
+	err = focaltech_read_size(psmouse);
+	if (err) {
 		focaltech_reset(psmouse);
 		psmouse_err(psmouse,
 			    "Unable to read the size of the touchpad.");
-		err = -ENOSYS;
 		goto fail;
 	}
 	if (focaltech_switch_protocol(psmouse)) {
@@ -329,7 +331,6 @@ fail:
 
 bool focaltech_supported(void)
 {
-	printk("focaltech_supported:true");
 	return true;
 }
 
@@ -337,7 +338,6 @@ bool focaltech_supported(void)
 
 int focaltech_init(struct psmouse *psmouse)
 {
-	psmouse_info(psmouse, "focaltech_init:false");
 	focaltech_reset(psmouse);
 
 	return 0;
@@ -345,7 +345,6 @@ int focaltech_init(struct psmouse *psmouse)
 
 bool focaltech_supported(void)
 {
-	printk("focaltech_supported:false");
 	return false;
 }
 
