@@ -42,30 +42,31 @@ static const char * const focaltech_pnp_ids[] = {
 int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 {
 	struct pnp_dev *dev;
-	struct pnp_id *id;
-	unsigned long sym_addr = kallsyms_lookup_name("pnp_global");
-	struct list_head *pnp_global = NULL;
-	int i, id_len;
-	int found = 0;
+	unsigned long sym_addr;
+	struct list_head *pnp_global;
+	int (*compare_pnp_id) (struct pnp_id *, const char *);
+	int i, found = 0;
 
+	sym_addr = kallsyms_lookup_name("pnp_global");
 	if (!sym_addr) {
 	    psmouse_err(psmouse, "cannot resolve pnp_global symbol");
 	    return -ENODEV;
 	}
-
 	psmouse_info(psmouse, "pnp_global resolved to %p", (void *) sym_addr);
 	pnp_global = (struct list_head *) sym_addr;
 
+	sym_addr = kallsyms_lookup_name("compare_pnp_id");
+	if (!sym_addr) {
+	    psmouse_err(psmouse, "cannot resolve compare_pnp_id symbol");
+	    return -ENODEV;
+	}
+	psmouse_info(psmouse, "compare_pnp_id resolved to %p", (void *) sym_addr);
+	compare_pnp_id = (int (*)(struct pnp_id *, const char*)) sym_addr;
+
 	list_for_each_entry(dev, pnp_global, global_list) {
-	    for (id = dev->id; id && !found; id = id->next) {
-	    	id_len = strlen(id->id);
-		for (i = 0; focaltech_pnp_ids[i] && !found; i++) {
-		    //if (compare_pnp_id(id, focaltech_pnp_ids[i]) != 0) {
-		    psmouse_info(psmouse, "strstr(id->id, focaltech_pnp_ids[%d]) = (%s, %s)",
-		    	    i, id->id, focaltech_pnp_ids[i]);
-		    if (!memcmp(id->id, focaltech_pnp_ids[i], id_len)) {
-			found = 1;
-		    }
+	    for (i = 0; focaltech_pnp_ids[i] && !found; i++) {
+	    	if (compare_pnp_id(dev->id, focaltech_pnp_ids[i]) != 0) {
+		    found = 1;
 		}
 	    }
 	}
