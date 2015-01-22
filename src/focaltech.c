@@ -20,6 +20,9 @@
 #include <linux/input/mt.h>
 #include <linux/serio.h>
 #include <linux/slab.h>
+#include <linux/pnp.h>
+#include <linux/list.h>
+#include <linux/kallsyms.h>
 #include "psmouse.h"
 #include "focaltech.h"
 
@@ -38,8 +41,39 @@ static const char * const focaltech_pnp_ids[] = {
  */
 int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 {
+	struct pnp_dev *dev;
+	struct pnp_id *id;
+	int i;
+	int found = 0;
+	struct list_head *pnp_global = NULL;
+
+	pnp_global = (struct list_head *) kallsyms_lookup_name("pnp_global");
+	if (!pnp_global) {
+	    psmouse_info(psmouse, "cannot resolve pnp_global symbol with kallsyms_lookup_name");
+	    return -ENODEV;
+	} else {
+	    psmouse_info(psmouse, "pnp_global resolved to %p", pnp_global);
+	}
+
+	for (dev = global_to_pnp_dev(pnp_global->next); dev != global_to_pnp_dev(pnp_global); dev = global_to_pnp_dev(dev->global_list.next)) {
+	    for (id = dev->id; id && !found; id = id->next) {
+		for (i = 0; focaltech_pnp_ids[i] && !found; i++) {
+		    //if (compare_pnp_id(id, focaltech_pnp_ids[i]) != 0) {
+		    psmouse_info(psmouse, "strstr(id->id, focaltech_pnp_ids[%d]) = (%s, %s)", i, id->id, focaltech_pnp_ids[i]);
+		    if (strstr(id->id, focaltech_pnp_ids[i])) {
+			found = 1;
+		    }
+		}
+	    }
+	}
+
+	if (!found)
+	    return -ENODEV;
+
+	/*
 	if (!psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids))
 		return -ENODEV;
+	*/
 
 	if (set_properties) {
 		psmouse->vendor = "FocalTech";
