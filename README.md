@@ -10,7 +10,7 @@ Installation instructions
 
 $ sudo apt-get install dkms
 $ cd /tmp
-$ git clone -b ubuntu-3.16.0-29.39 https://github.com/nieluj/psmouse-focaltech-dkms.git 
+$ git clone https://github.com/nieluj/psmouse-focaltech-dkms.git 
 $ cd psmouse-focaltech-dkms
 $ ./install.sh
 
