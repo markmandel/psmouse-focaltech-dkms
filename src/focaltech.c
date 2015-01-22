@@ -47,6 +47,14 @@ int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 	int (*compare_pnp_id) (struct pnp_id *, const char *);
 	int i, found = 0;
 
+	/* This code implements a workaround to correctly detect
+	 * the Focaltech touchpad on a muxed port.
+	 * Before commit 266e43c4eb81440e81da6c51bc5d4f9be2b7839c,
+	 * on a muxed port, the firmware_id was not copied into
+	 * psmouse->ps2dev.serio->firmware_id.
+	 * The code below loops on all pnp devices and tests if any
+	 * pnp_id matches one referenced in the focaltech_pnp_ids array
+	 */
 	sym_addr = kallsyms_lookup_name("pnp_global");
 	if (!sym_addr) {
 	    psmouse_err(psmouse, "cannot resolve pnp_global symbol");
@@ -66,12 +74,15 @@ int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 	list_for_each_entry(dev, pnp_global, global_list) {
 	    for (i = 0; focaltech_pnp_ids[i] && !found; i++) {
 	    	if (compare_pnp_id(dev->id, focaltech_pnp_ids[i]) != 0) {
+	            psmouse_info(psmouse, "focaltech device detected");
 		    found = 1;
 		}
 	    }
 	}
 
-	if (!found) {
+	/* Original check, will not work on a muxed port before commit
+	 * 266e43c4eb81440e81da6c51bc5d4f9be2b7839c */
+	if (!found && !psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids)) {
 	    psmouse_warn(psmouse, "focaltech device not found");
 	    return -ENODEV;
 	}
