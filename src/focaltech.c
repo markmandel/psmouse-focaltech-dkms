@@ -43,37 +43,37 @@ int focaltech_detect(struct psmouse *psmouse, bool set_properties)
 {
 	struct pnp_dev *dev;
 	struct pnp_id *id;
-	int i;
-	int found = 0;
+	unsigned long sym_addr = kallsyms_lookup_name("pnp_global");
 	struct list_head *pnp_global = NULL;
+	int i, id_len;
+	int found = 0;
 
-	pnp_global = (struct list_head *) kallsyms_lookup_name("pnp_global");
-	if (!pnp_global) {
-	    psmouse_info(psmouse, "cannot resolve pnp_global symbol with kallsyms_lookup_name");
+	if (!sym_addr) {
+	    psmouse_err(psmouse, "cannot resolve pnp_global symbol");
 	    return -ENODEV;
-	} else {
-	    psmouse_info(psmouse, "pnp_global resolved to %p", pnp_global);
 	}
 
-	for (dev = global_to_pnp_dev(pnp_global->next); dev != global_to_pnp_dev(pnp_global); dev = global_to_pnp_dev(dev->global_list.next)) {
+	psmouse_info(psmouse, "pnp_global resolved to %p", (void *) sym_addr);
+	pnp_global = (struct list_head *) sym_addr;
+
+	list_for_each_entry(dev, pnp_global, global_list) {
 	    for (id = dev->id; id && !found; id = id->next) {
+	    	id_len = strlen(id->id);
 		for (i = 0; focaltech_pnp_ids[i] && !found; i++) {
 		    //if (compare_pnp_id(id, focaltech_pnp_ids[i]) != 0) {
-		    psmouse_info(psmouse, "strstr(id->id, focaltech_pnp_ids[%d]) = (%s, %s)", i, id->id, focaltech_pnp_ids[i]);
-		    if (strstr(id->id, focaltech_pnp_ids[i])) {
+		    psmouse_info(psmouse, "strstr(id->id, focaltech_pnp_ids[%d]) = (%s, %s)",
+		    	    i, id->id, focaltech_pnp_ids[i]);
+		    if (!memcmp(id->id, focaltech_pnp_ids[i], id_len)) {
 			found = 1;
 		    }
 		}
 	    }
 	}
 
-	if (!found)
+	if (!found) {
+	    psmouse_warn(psmouse, "focaltech device not found");
 	    return -ENODEV;
-
-	/*
-	if (!psmouse_matches_pnp_id(psmouse, focaltech_pnp_ids))
-		return -ENODEV;
-	*/
+	}
 
 	if (set_properties) {
 		psmouse->vendor = "FocalTech";

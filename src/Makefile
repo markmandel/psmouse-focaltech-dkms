@@ -36,3 +36,9 @@ psmouse-$(CONFIG_MOUSE_PS2_TOUCHKIT)	+= touchkit_ps2.o
 psmouse-$(CONFIG_MOUSE_PS2_CYPRESS)	+= cypress_ps2.o
 
 ccflags-y := -DCONFIG_MOUSE_PS2_FOCALTECH
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) psmouse.ko
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+
