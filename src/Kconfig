@@ -156,6 +156,7 @@ config MOUSE_PS2_FOCALTECH
 
 	  If unsure, say Y.
 
+
 config MOUSE_SERIAL
 	tristate "Serial mouse"
 	select SERIO

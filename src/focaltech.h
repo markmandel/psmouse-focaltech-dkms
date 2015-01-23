@@ -42,9 +42,9 @@ struct focaltech_finger_state {
 	/* the touchpad has generated a touch event for the finger */
 	bool active;
 	/*
-	 * The touchpad has sent position data for the finger. Touch event
-	 * packages reset this flag for new fingers, and there is a time
-	 * between the first touch event and the following absolute position
+	 * The touchpad has sent position data for the finger. The flag is 0
+	 * when the finger is not active, and there is a time between the first
+	 * touch event for the finger and the following absolute position
 	 * packet for the finger where the touchpad has declared the finger to
 	 * be valid, but we do not have any valid position yet.
 	 */
